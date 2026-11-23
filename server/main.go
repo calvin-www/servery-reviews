@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
+
+// Must match the servery ids hardcoded in page.tsx.
+var serveryIDs = []string{"baker", "north", "seibel", "south", "south-main", "west"}
 
 // Review mirrors the JavaScript object on line 43 of page.tsx.
 // The tags on this struct (`json:"servery"`) are used when the json package converts this Go struct to/from a JSON object
@@ -80,9 +84,30 @@ func handlePostReviews(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 	}
 
+	// validate and clean request data
+	review.Dish = strings.TrimSpace(review.Dish)
+	review.Comment = strings.TrimSpace(review.Comment)
+
+	if !isServery(review.Servery) {
+		http.Error(w, "Unknown servery.", http.StatusBadRequest)
+		return
+	}
+	if review.Dish == "" {
+		http.Error(w, "Dish name is required.", http.StatusBadRequest)
+		return
+	}
+	if review.Rating < 1 || review.Rating > 5 {
+		http.Error(w, "Rating must be between 1 and 5.", http.StatusBadRequest)
+		return
+	}
+
 	// add review from request to our stored reviews
 	reviews = append(reviews, review)
 
 	// we don't need to return any data for this POST request, just provide the client a success code
 	w.WriteHeader(http.StatusCreated)
+}
+
+func isServery(id string) bool {
+	return slices.Contains(serveryIDs, id)
 }
