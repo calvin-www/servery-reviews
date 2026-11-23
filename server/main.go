@@ -39,6 +39,26 @@ func handleGetReviews(w http.ResponseWriter, r *http.Request) {
 	// searched up "golang read http request params"
 	servery := r.URL.Query().Get("servery")
 	fmt.Println(servery)
+
+	if servery == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	// hard-code some data to see if the response works
+	// notice that the response is a list of Reviews, which matches the expected return type of getReviews in page.tsx
+	// it's bad practice, but we'll ignore the error from Encode for now
+	json.NewEncoder(w).Encode([]Review{
+		{
+			Servery: servery,
+			Dish:    "Water Chicken",
+			Rating:  3,
+			Comment: "mmmm",
+		},
+	})
 }
 
 func handlePostReviews(w http.ResponseWriter, r *http.Request) {
