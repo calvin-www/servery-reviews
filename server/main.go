@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 )
 
 // Must match the servery ids hardcoded in page.tsx.
@@ -21,7 +23,10 @@ type Review struct {
 
 // declare a global variable to hold all reviews
 // these reviews will only live for the life of the go program, not between runs
-var reviews = []Review{}
+var (
+	reviews = []Review{}
+	mu      sync.Mutex // protects reviews against concurrent reads/writes
+)
 
 func main() {
 	fmt.Println("servery-reviews backend running...")
@@ -52,6 +57,10 @@ func handleGetReviews(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	// we must prevent concurrent writers from changing the reviews while we try to read from it
+	mu.Lock()         // lock before reading from our stored reviews
+	defer mu.Unlock() // we'll unlock at the end of this function
 
 	matching := []Review{}
 	for _, review := range reviews {
@@ -100,6 +109,11 @@ func handlePostReviews(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Rating must be between 1 and 5.", http.StatusBadRequest)
 		return
 	}
+
+	// we must prevent concurrent writers from changing the stored list of reviews while we try to write to it
+	// and we must prevent concurrent readers from getting an incorrect view of the data while we append a review
+	mu.Lock()         // lock before writing to our stored reviews
+	defer mu.Unlock() // we'll unlock at the end of this function
 
 	// add review from request to our stored reviews
 	reviews = append(reviews, review)
