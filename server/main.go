@@ -15,6 +15,10 @@ type Review struct {
 	Comment string `json:"comment"`
 }
 
+// declare a global variable to hold all reviews
+// these reviews will only live for the life of the go program, not between runs
+var reviews = []Review{}
+
 func main() {
 	fmt.Println("servery-reviews backend running...")
 
@@ -45,20 +49,19 @@ func handleGetReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	matching := []Review{}
+	for _, review := range reviews {
+		if review.Servery == servery {
+			matching = append(matching, review)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	// hard-code some data to see if the response works
 	// notice that the response is a list of Reviews, which matches the expected return type of getReviews in page.tsx
 	// it's bad practice, but we'll ignore the error from Encode for now
-	json.NewEncoder(w).Encode([]Review{
-		{
-			Servery: servery,
-			Dish:    "Water Chicken",
-			Rating:  3,
-			Comment: "mmmm",
-		},
-	})
+	json.NewEncoder(w).Encode(matching)
 }
 
 func handlePostReviews(w http.ResponseWriter, r *http.Request) {
@@ -77,5 +80,9 @@ func handlePostReviews(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 	}
 
-	fmt.Println(review)
+	// add review from request to our stored reviews
+	reviews = append(reviews, review)
+
+	// we don't need to return any data for this POST request, just provide the client a success code
+	w.WriteHeader(http.StatusCreated)
 }
