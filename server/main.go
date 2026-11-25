@@ -35,7 +35,14 @@ type Server struct {
 func main() {
 	fmt.Println("servery-reviews backend running...")
 
-	store := NewMemoryStore()
+	// we can change between a MemoryStore and SQLiteStore seamlessly since they both fulfill the ReviewStore interface
+	store, err := NewSQLiteStore("reviews.db")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer store.Close()
+
 	srv := &Server{store: store}
 
 	mux := http.NewServeMux()
@@ -43,7 +50,7 @@ func main() {
 	mux.HandleFunc("POST /api/reviews", srv.handlePostReviews)
 
 	// I chose 8080 because the README says backend requests are sent to this port.
-	err := http.ListenAndServe(":8080", mux)
+	err = http.ListenAndServe(":8080", mux)
 	if err != nil {
 		fmt.Println(err)
 		return
