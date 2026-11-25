@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 )
 
 // Must match the servery ids hardcoded in page.tsx.
@@ -21,19 +20,27 @@ type Review struct {
 	Comment string `json:"comment"`
 }
 
-// declare a global variable to hold all reviews
-// these reviews will only live for the life of the go program, not between runs
-var (
-	reviews = []Review{}
-	mu      sync.Mutex // protects reviews against concurrent reads/writes
-)
+// ReviewStore defines how reviews are saved and loaded.
+// Using an interface lets our HTTP handlers work with any storage backend.
+type ReviewStore interface {
+	GetReviews(servery string) ([]Review, error)
+	AddReview(review Review) error
+}
+
+// Server holds our storage dependency and handles HTTP requests.
+type Server struct {
+	store ReviewStore
+}
 
 func main() {
 	fmt.Println("servery-reviews backend running...")
 
+	store := NewMemoryStore()
+	srv := &Server{store: store}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/reviews", handleGetReviews)
-	mux.HandleFunc("POST /api/reviews", handlePostReviews)
+	mux.HandleFunc("GET /api/reviews", srv.handleGetReviews)
+	mux.HandleFunc("POST /api/reviews", srv.handlePostReviews)
 
 	// I chose 8080 because the README says backend requests are sent to this port.
 	err := http.ListenAndServe(":8080", mux)
@@ -43,7 +50,7 @@ func main() {
 	}
 }
 
-func handleGetReviews(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetReviews(w http.ResponseWriter, r *http.Request) {
 	// this function should execute when you run the following command in the terminal (while running this main.go file):
 	// curl -X GET --location "http://localhost:8080/api/reviews?servery=north"
 	fmt.Println("handleGetReviews called")
@@ -58,15 +65,10 @@ func handleGetReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// we must prevent concurrent writers from changing the reviews while we try to read from it
-	mu.Lock()         // lock before reading from our stored reviews
-	defer mu.Unlock() // we'll unlock at the end of this function
-
-	matching := []Review{}
-	for _, review := range reviews {
-		if review.Servery == servery {
-			matching = append(matching, review)
-		}
+	matching, err := s.store.GetReviews(servery)
+	if err != nil {
+		http.Error(w, "Failed to load reviews.", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -77,7 +79,7 @@ func handleGetReviews(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(matching)
 }
 
-func handlePostReviews(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handlePostReviews(w http.ResponseWriter, r *http.Request) {
 	// this function should execute when you run the following command in the terminal (while running this main.go file):
 	// curl -X POST --json '{ "servery": "north", "dish": "Pad Thai", "rating": 4, "comment": "Pretty good" }' --location "http://localhost:8080/api/reviews"
 	fmt.Println("handlePostReviews called")
@@ -110,13 +112,10 @@ func handlePostReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// we must prevent concurrent writers from changing the stored list of reviews while we try to write to it
-	// and we must prevent concurrent readers from getting an incorrect view of the data while we append a review
-	mu.Lock()         // lock before writing to our stored reviews
-	defer mu.Unlock() // we'll unlock at the end of this function
-
-	// add review from request to our stored reviews
-	reviews = append(reviews, review)
+	if err := s.store.AddReview(review); err != nil {
+		http.Error(w, "Failed to save review.", http.StatusInternalServerError)
+		return
+	}
 
 	// we don't need to return any data for this POST request, just provide the client a success code
 	w.WriteHeader(http.StatusCreated)
